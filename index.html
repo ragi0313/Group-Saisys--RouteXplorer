@@ -2,7 +2,8 @@
 To find feature to review
 Search your Group Name
   ====================================================================================================-->
-
+<!-- The main problem for me is that the API key is exposed here on the index.html file which anyone that views the source code can have a hold of the API key. Anotheris that there is no error handling on fetch where if the route request fails
+ the status just says error, much better to have a user friendly alert. Iturralde, Jose (Devnet&Chill)-->
 <!doctype html>
 <html lang="en">
 <head>
@@ -468,6 +469,10 @@ Search your Group Name
     // FEATURE: Autocomplete Dropdown
     // - Live suggestions via GraphHopper geocoding, with debounce and keyboard/mouse controls
     // GROUP DEVS
+    // This autocomplete provides live geocoding suggestions with smooth debounced - JUSTIN
+    // input. It supports intuitive keyboard and mouse navigation with clean and dynamic dropdown rendering - JUSTIN
+    // 
+    // The autocomplete feature is pretty mindblowing for an activity like this I am in awe. I have no criticism towards it - RICCI 
     //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
     /* ---------- Autocomplete: setup for an input + dropdown ---------- */
