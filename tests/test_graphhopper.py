@@ -232,7 +232,7 @@ class TestFuelCostCalculation:
         fuel_cost = fuel_consumed * fuel_price
 
         assert abs(fuel_consumed - 7.0) < 0.01
-        assert abs(fuel_cost - 399.4) < 0.01
+        assert abs(fuel_cost - 400.4) < 0.01
 
     def test_fuel_cost_short_distance(self):
         """Test fuel cost for short distance."""
@@ -244,7 +244,7 @@ class TestFuelCostCalculation:
         fuel_cost = fuel_consumed * fuel_price
 
         assert abs(fuel_consumed - 0.7) < 0.01
-        assert abs(fuel_cost - 39.94) < 0.01
+        assert abs(fuel_cost - 40.04) < 0.01
 
     def test_fuel_cost_zero_distance(self):
         """Test fuel cost for zero distance."""
