@@ -1,0 +1,636 @@
+<!--====================================================================================================
+To find feature to review
+Search your Group Name
+  ====================================================================================================-->
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SAISys RouteXplorer</title>
+
+  <!--====================================================================================================
+  = FEATURE: Base Styles & Leaflet Dependencies
+  = Includes your app stylesheet plus Leaflet CSS/JS for the interactive map.
+  ====================================================================================================-->
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <style>
+    /*====================================================================================================
+    = FEATURE: Basic Helpers & Layout
+    = Small layout helpers, KPI grid responsiveness, route legend, and turn-by-turn row highlights.
+    ====================================================================================================*/
+    .marker-emoji{ font-size:20px; line-height:20px; }
+    .kpi-grid{ display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; }
+    @media (max-width:900px){ .kpi-grid{ grid-template-columns:repeat(2,1fr); } }
+
+    .legend{ font-size:13px; opacity:.85; margin:6px 0 10px; display:flex; align-items:center; gap:10px; }
+    .swatch{ width:16px; height:4px; border-radius:2px; display:inline-block; vertical-align:middle; }
+    .swatch-route{ background:#00ff90; }
+
+    .inst-icon{ width:24px; text-align:center; }
+    .inst-row-dest{ background: rgba(0,255,144,0.12); font-weight:600; }
+    .inst-row-dest td{ border-top:2px solid #00ff90; border-bottom:2px solid #00ff90; }
+
+    /*====================================================================================================
+    = FEATURE: Autocomplete Dropdown Styles
+    = The suggestion box that appears under the Origin/Destination inputs.
+    ====================================================================================================*/
+    .input-wrap{ position:relative; } /* anchors dropdown to input */
+    .ac-box{
+      position:absolute; left:0; right:0; top:100%; z-index:50;
+      background:#0b1220; color:#e8eefc; border:1px solid rgba(255,255,255,.1);
+      border-radius:10px; margin-top:6px; max-height:260px; overflow:auto;
+      box-shadow:0 10px 24px rgba(0,0,0,.35);
+    }
+    body.light-mode .ac-box{ background:#fff; color:#111; border-color:rgba(0,0,0,.12); }
+    .ac-item{
+      padding:10px 12px; cursor:pointer; display:grid; grid-template-columns: 1fr auto; gap:10px;
+    }
+    .ac-item:hover, .ac-item.active{ background:rgba(0,255,144,.12); }
+    .ac-title{ font-size:14px; line-height:1.2; }
+    .ac-sub{ font-size:12px; opacity:.75; }
+    .ac-badge{ font-size:12px; opacity:.7; white-space:nowrap; }
+    .ac-empty{ padding:10px 12px; font-size:13px; opacity:.7; }
+  </style>
+</head>
+
+<body>
+
+  <!--====================================================================================================
+  = FEATURE: Loading Screen
+  = Initial splash screen that fades away shortly after load.
+  ====================================================================================================-->
+  <div id="loading-screen">
+    <div class="loader-content">
+      <h1 class="loader-title">SAISys RouteXplorer</h1>
+      <div class="loader-spinner"></div>
+      <p class="loader-text">Loading, please wait...</p>
+    </div>
+  </div>
+
+  <!--====================================================================================================
+  = FEATURE: App Header & Theme Toggle
+  = App title and a dark/light mode switch (adds/removes .light-mode on <body>).
+  ====================================================================================================-->
+  <nav class="navbar">
+    <div class="nav-left">
+      <h1>SAISys RouteXplorer</h1>
+      <p>Your path, redefined.</p>
+    </div>
+
+    <div class="theme-toggle">
+      <input type="checkbox" id="mode-toggle">
+      <label for="mode-toggle" class="toggle-label">
+        <div class="toggle-inner">
+          <span class="icon sun">☀️</span>
+          <span class="icon moon">🌙</span>
+        </div>
+        <div class="toggle-ball"></div>
+      </label>
+    </div>
+  </nav>
+
+  <!--====================================================================================================
+  = FEATURE: Input Panel (Origin / Destination / Vehicle)
+  = Primary user inputs and the generated status text.
+  ====================================================================================================-->
+  <div class="panel">
+    <label>Origin</label>
+    <div class="input-wrap">
+      <input id="origin" type="text" placeholder="e.g., Batangas City Hall" autocomplete="off" />
+      <div class="ac-box" id="ac-origin" hidden></div> <!-- suggestions panel -->
+    </div>
+
+    <label>Destination</label>
+    <div class="input-wrap">
+      <input id="destination" type="text" placeholder="e.g., SM City Batangas" autocomplete="off" />
+      <div class="ac-box" id="ac-destination" hidden></div>
+    </div>
+
+    <div class="row">
+      <div>
+        <label>Vehicle</label>
+        <select id="vehicle">
+          <option value="car">Car</option>
+          <option value="motorcycle">Motorcycle</option>
+          <option value="bike">Bike</option>
+          <option value="foot">Walking</option>
+          <option value="ebike">E-Bike</option>
+        </select>
+      </div>
+    </div>
+
+    <button id="generate" class="btn">Generate Report</button>
+    <p id="status" class="status">Ready</p>
+  </div>
+
+  <!--====================================================================================================
+  = FEATURE: Map + KPIs + Instructions
+  = Leaflet map container, KPI cards, and a turn-by-turn table.
+  ====================================================================================================-->
+  <div class="map-container">
+    <div id="map" style="height:420px;"></div>
+    <div class="legend"><span class="swatch swatch-route"></span> Suggested route</div>
+
+    <div class="kpi-grid">
+      <!-- Distance -->
+      <div class="kpi-card">
+        <div class="kpi-icon kpi-blue">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 6h5l2 6 3-4h8" />
+            <circle cx="6" cy="6" r="2" fill="currentColor"></circle>
+            <circle cx="21" cy="8" r="2" fill="currentColor"></circle>
+          </svg>
+        </div>
+        <div class="kpi-body">
+          <div class="kpi-label">Distance</div>
+          <div class="kpi-value" id="kpi-distance">—</div>
+          <div class="kpi-sub" id="kpi-distance-sub">—</div>
+        </div>
+      </div>
+
+      <!-- Duration -->
+      <div class="kpi-card">
+        <div class="kpi-icon kpi-purple">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="9"></circle>
+            <path d="M12 7v6l4 2"></path>
+          </svg>
+        </div>
+        <div class="kpi-body">
+          <div class="kpi-label">Duration</div>
+          <div class="kpi-value" id="kpi-duration">—</div>
+          <div class="kpi-sub" id="kpi-duration-sub">—</div>
+        </div>
+      </div>
+
+      <!-- KPI 3: dynamic (Fuel/Steps/Calories/Energy) -->
+      <div class="kpi-card">
+        <div class="kpi-icon kpi-green">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 7a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v12H3z"></path>
+            <path d="M16 7l3 3v5a3 3 0 0 1-3 3h-1"></path>
+            <circle cx="7" cy="11" r="1.5" fill="currentColor"></circle>
+          </svg>
+        </div>
+        <div class="kpi-body">
+          <div class="kpi-label" id="kpi-a-label">Fuel</div>
+          <div class="kpi-value" id="kpi-a">—</div>
+          <div class="kpi-sub" id="kpi-a-sub">eff 7.0 L/100km</div>
+        </div>
+      </div>
+
+      <!-- KPI 4: dynamic (Cost/Calories/Avg Speed/Charge Cost) -->
+      <div class="kpi-card">
+        <div class="kpi-icon kpi-orange">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M7 20V4h6a5 5 0 0 1 0 10H7"></path>
+            <path d="M7 10h10M7 14h10"></path>
+          </svg>
+        </div>
+        <div class="kpi-body">
+          <div class="kpi-label" id="kpi-b-label">Cost</div>
+          <div class="kpi-value" id="kpi-b">—</div>
+          <div class="kpi-sub" id="kpi-b-sub">₱57.20/L</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="instructions" id="instructions">
+      <h2 id="inst-title">Turn-by-Turn Instructions</h2>
+      <table>
+        <thead>
+          <tr><th class="inst-icon">↪</th><th>Instruction</th><th>Distance</th></tr>
+        </thead>
+        <tbody id="instruction-list">
+          <tr><td colspan="3">No data yet.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    // FEATURE: App Setup & Constants
+    // - API key, KPI assumptions, vehicle profile mapping
+    // - Loader fade-out and theme toggle
+    //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+    /* ---------- Constants: API key & KPI assumptions ---------- */
+    const DEFAULT_KEY = "05ddb74c-90fe-4dad-9236-e37bb1fc2003";
+
+    // Fitness/energy assumptions
+    const USER_WEIGHT_KG = 70;
+    const STEPS_PER_KM = 1250;
+    const MET_WALK = 3.3;
+    const MET_BIKE = 7.5;
+
+    // Fuel/power costs
+    const CAR_EFF_L_PER_100KM = 7.0;
+    const MOTO_EFF_L_PER_100KM = 3.0;
+    const FUEL_PRICE = 57.20;
+    const EBIKE_WH_PER_KM = 12;
+    const ELEC_RATE_PHP_PER_KWH = 12.0;
+
+    // GraphHopper vehicle mapping
+    const VEHICLE_PROFILE = {
+      car: 'car',
+      motorcycle: 'car',   // GH fallback
+      bike: 'bike',
+      foot: 'foot',
+      ebike: 'bike'        // route like bike; KPIs use electric
+    };
+
+    /* ---------- App boot: fade out loader & theme toggle ---------- */
+    window.addEventListener("load", () => {
+      const loader = document.getElementById("loading-screen");
+      setTimeout(() => {
+        loader.classList.add("fade-out");
+        setTimeout(() => loader.style.display = "none", 800);
+      }, 1200);
+    });
+
+    const modeToggle = document.getElementById("mode-toggle");
+    modeToggle.addEventListener("change", () =>
+      document.body.classList.toggle("light-mode", modeToggle.checked)
+    );
+
+    const $ = id => document.getElementById(id);
+
+    //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    // FEATURE: Map Visualization & Routing
+    // - Leaflet map init and tile layer
+    // - Marker icons, route polyline drawing, and fitBounds
+    //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+    /* ---------- Map: Leaflet init + OSM tiles ---------- */
+    const map = L.map('map', {center:[13.759,121.058], zoom:12});
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19}).addTo(map);
+
+    // Marker icons
+    const startIcon = L.divIcon({className:'marker-emoji', html:'📍', iconSize:[20,20], iconAnchor:[10,10]});
+    const greenFlagSVG = `
+      <svg width="22" height="22" viewBox="0 0 24 24">
+        <path d="M6 3v18" fill="none" stroke="#1f2937" stroke-width="2"/>
+        <path d="M7 4h9l-2 3 2 3H7z" fill="#00ff90" stroke="#00ff90" stroke-width="1"/>
+      </svg>`;
+    const endIcon = L.divIcon({className:'marker-emoji', html: greenFlagSVG, iconSize:[22,22], iconAnchor:[10,18]});
+    let startMarker = null, endMarker = null;
+
+    // Draw route polyline and fit bounds
+    let routeLine = null;
+    function drawRoute(coords){
+      if(routeLine) map.removeLayer(routeLine);
+      routeLine = L.polyline(coords, {color:'#00ff90', weight:6}).addTo(map);
+      map.fitBounds(routeLine.getBounds(), {padding:[20,20]});
+    }
+
+    //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    // FEATURE: Utilities & Helpers
+    // - Geocoding helpers, formatters, instruction icons
+    //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+    // Single best geocode → {lat,lng}
+    async function geocode(q){
+      const u = new URL('https://graphhopper.com/api/1/geocode');
+      u.searchParams.set('q', q);
+      u.searchParams.set('limit', 1);
+      u.searchParams.set('key', DEFAULT_KEY);
+      const r = await fetch(u);
+      const j = await r.json();
+      if(!j.hits.length) throw new Error('No result for ' + q);
+      return j.hits[0].point; // {lat,lng}
+    }
+
+    // Multi-hit geocode for suggestions
+    async function geocodeSuggest(q, limit=6, controller){
+      const u = new URL('https://graphhopper.com/api/1/geocode');
+      u.searchParams.set('q', q);
+      u.searchParams.set('limit', limit);
+      u.searchParams.set('key', DEFAULT_KEY);
+      const r = await fetch(u, { signal: controller?.signal });
+      if(!r.ok) return { hits: [] };
+      return r.json();
+    }
+
+    // Formatters
+    function prettyTime(ms){
+      const s = Math.round(ms/1000);
+      const h = Math.floor(s/3600);
+      const m = Math.floor((s%3600)/60);
+      const sec = s%60;
+      return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+    }
+    function kmToMiles(km){ return km / 1.60934; }
+    const fmtPeso = n => `₱${n.toFixed(2)}`;
+    const fmt1 = n => n.toFixed(1);
+    const fmt2 = n => n.toFixed(2);
+    function fmt0(n){ return Math.round(n).toString(); }
+
+    // Quick MET-based calories
+    function estimateCalories(MET, minutes, weightKg = USER_WEIGHT_KG){
+      return MET * 3.5 * weightKg / 200 * minutes;
+    }
+
+    // Map GH "sign" → emoji direction
+    function iconForInstruction(sign, text){
+      const t = (text || '').toLowerCase();
+      const has = k => t.includes(k);
+      if (sign === 4 || has('destination') || has('arrive')) return '🏁';
+      if (sign === 9 || has('roundabout')) return '⟳';
+      if (sign === 3 || has('sharp right')) return '↱';
+      if (sign === 2 || has('right')) return '➡️';
+      if (sign === 1 || has('slight right')) return '↗️';
+      if (sign === 5 || has('sharp left')) return '↰';
+      if (sign === 6 || has('left')) return '⬅️';
+      if (sign === 7 || has('slight left')) return '↖️';
+      if (has('u-turn') || has('uturn')) return '↩️';
+      if (has('continue') || has('straight')) return '⬆️';
+      return '•';
+    }
+
+    //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    // FEATURE: Route Summary KPIs
+    // - Computes and renders Distance, Duration, and vehicle-specific KPIs
+    // GROUP Devnet & Chill
+
+    //  The code is neatly structured with clear section comments for each feature. The UI maintains a clean, modern look with balanced
+    //colors and spacing, while the KPI cards and icons create a dashboard-style layout that makes route information easy to view and interpret.
+    // - Rupert
+    //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+    /* ---------- KPIs: compute & render based on vehicle ---------- */
+    function setKPI({km, durMs, vehicle}){
+      const miles = kmToMiles(km);
+      const mins = Math.round(durMs/60000);
+      const hours = durMs / 3600000;
+      const avgSpeedKmh = hours > 0 ? km / hours : 0;
+
+      $('kpi-distance').textContent = `${fmt1(km)} km`;
+      $('kpi-distance-sub').textContent = `${fmt1(miles)} mi`;
+      $('kpi-duration').textContent = prettyTime(durMs);
+      $('kpi-duration-sub').textContent = `${mins} min`;
+
+      if (vehicle === 'foot') {
+        // Walking: steps + calories
+        const steps = Math.round(km * STEPS_PER_KM);
+        const kcal = estimateCalories(MET_WALK, mins);
+        $('kpi-a-label').textContent = 'Steps';
+        $('kpi-a').textContent = steps.toLocaleString();
+        $('kpi-a-sub').textContent = `~${STEPS_PER_KM} steps/km`;
+        $('kpi-b-label').textContent = 'Calories';
+        $('kpi-b').textContent = `${fmt0(kcal)} kcal`;
+        $('kpi-b-sub').textContent = `MET ${MET_WALK}, ${USER_WEIGHT_KG} kg`;
+      }
+      else if (vehicle === 'bike') {
+        // Biking: calories + avg speed
+        const kcal = estimateCalories(MET_BIKE, mins);
+        $('kpi-a-label').textContent = 'Calories';
+        $('kpi-a').textContent = `${fmt0(kcal)} kcal`;
+        $('kpi-a-sub').textContent = `MET ${MET_BIKE}, ${USER_WEIGHT_KG} kg`;
+        $('kpi-b-label').textContent = 'Avg Speed';
+        $('kpi-b').textContent = `${fmt1(avgSpeedKmh)} km/h`;
+        $('kpi-b-sub').textContent = `${fmt1(km)} km in ${mins} min`;
+      }
+      else if (vehicle === 'ebike') {
+        // E-bike: energy + charge cost
+        const wh = km * EBIKE_WH_PER_KM;
+        const kwh = wh / 1000;
+        const chargeCost = kwh * ELEC_RATE_PHP_PER_KWH;
+        $('kpi-a-label').textContent = 'Energy';
+        $('kpi-a').textContent = `${fmt2(wh)} Wh`;
+        $('kpi-a-sub').textContent = `${EBIKE_WH_PER_KM} Wh/km`;
+        $('kpi-b-label').textContent = 'Charge Cost';
+        $('kpi-b').textContent = fmtPeso(chargeCost);
+        $('kpi-b-sub').textContent = `@ ₱${ELEC_RATE_PHP_PER_KWH.toFixed(2)}/kWh`;
+      }
+      else if (vehicle === 'motorcycle') {
+        // Motorcycle: fuel + cost
+        const fuelL = (km * MOTO_EFF_L_PER_100KM) / 100;
+        const fuelCost = fuelL * FUEL_PRICE;
+        $('kpi-a-label').textContent = 'Fuel';
+        $('kpi-a').textContent = `${fmt2(fuelL)} L`;
+        $('kpi-a-sub').textContent = `eff ${MOTO_EFF_L_PER_100KM.toFixed(1)} L/100km`;
+        $('kpi-b-label').textContent = 'Cost';
+        $('kpi-b').textContent = fmtPeso(fuelCost);
+        $('kpi-b-sub').textContent = `@ ${fmtPeso(FUEL_PRICE)}/L`;
+      }
+      else {
+        // Car: fuel + cost
+        const fuelL = (km * CAR_EFF_L_PER_100KM) / 100;
+        const fuelCost = fuelL * FUEL_PRICE;
+        $('kpi-a-label').textContent = 'Fuel';
+        $('kpi-a').textContent = `${fmt2(fuelL)} L`;
+        $('kpi-a-sub').textContent = `eff ${CAR_EFF_L_PER_100KM.toFixed(1)} L/100km`;
+        $('kpi-b-label').textContent = 'Cost';
+        $('kpi-b').textContent = fmtPeso(fuelCost);
+        $('kpi-b-sub').textContent = `@ ${fmtPeso(FUEL_PRICE)}/L`;
+      }
+    }
+
+    //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    // FEATURE: Turn-by-Turn Instruction Renderer
+    // - Renders the table of steps and adds icons based on instruction "sign"
+    // GROUP DevOps
+
+    // Shanyka Tiemsim - Organization and Input Handling
+    // Since this section of the code is focused on organizing  the routing  data  into  a  user-friendly,  turn-by-turn instruction 
+    // table, it can be understood that this function highlights the importance of data organization  in  applications  and systems. 
+    // The dynamically assigned direction icons, including each step's sign value, provides a better format in terms  of  visibility
+    // and neatness. Hence, it greatly improves this program can ensure that its users can easily navigate throughout their journey. 
+    // Through the use of template literals, the HTML is clean and maintainable. However, it can be further improved if the program 
+    // can handle cases with missing input or special characters, so that there won't be any fallback in its execution.
+    //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+    /* ---------- Render turn-by-turn instructions ---------- */
+    function renderInstructions(path){
+      const rows = path.instructions.map(inst => {
+        const icon = iconForInstruction(inst.sign, inst.text);
+        const isDest = /destination|arrive|finish/i.test(inst.text || '');
+        const distKm = (inst.distance/1000).toFixed(2);
+        return `
+          <tr class="${isDest ? 'inst-row-dest' : ''}">
+            <td class="inst-icon">${icon}</td>
+            <td>${inst.text}</td>
+            <td>${distKm} km</td>
+          </tr>
+        `;
+      }).join('');
+      $('instruction-list').innerHTML = rows || '<tr><td colspan="3">No steps.</td></tr>';
+      $('inst-title').textContent = 'Turn-by-Turn Instructions';
+    }
+
+    //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    // FEATURE: Autocomplete Dropdown
+    // - Live suggestions via GraphHopper geocoding, with debounce and keyboard/mouse controls
+    // GROUP DEVS
+    //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+    /* ---------- Autocomplete: setup for an input + dropdown ---------- */
+    function setupAutocomplete(inputId, boxId){
+      const input = $(inputId);
+      const box   = $(boxId);
+      let items = [];
+      let active = -1;
+      let lastQuery = '';
+      let aborter = null;
+      let hideTimer = null;
+
+      // Dropdown visibility helpers
+      function hide(){ box.hidden = true; box.innerHTML=''; active=-1; }
+      function show(){ box.hidden = false; }
+
+      // Set highlighted item
+      function setActive(idx){
+        const nodes = [...box.querySelectorAll('.ac-item')];
+        nodes.forEach((n,i)=> n.classList.toggle('active', i===idx));
+        active = idx;
+      }
+
+      // Render suggestions list
+      function render(results){
+        items = results.hits || [];
+        if(!items.length){ box.innerHTML = `<div class="ac-empty">No matches</div>`; show(); return; }
+        box.innerHTML = items.map((h,i)=>{
+          const title = h.name || (h.street || '') + (h.housenumber ? ' ' + h.housenumber : '');
+          const sub   = [h.city, h.state, h.country].filter(Boolean).join(' • ');
+          const badge = h.osm_key || h.osm_value || h.point?.type || 'place';
+          return `
+            <div class="ac-item" data-idx="${i}">
+              <div>
+                <div class="ac-title">${title || 'Unnamed'}</div>
+                <div class="ac-sub">${sub}</div>
+              </div>
+              <div class="ac-badge">${badge}</div>
+            </div>`;
+        }).join('');
+        show();
+      }
+
+      // Choose an item → fill input
+      function pick(i){
+        const h = items[i];
+        if(!h) return;
+        const title = h.name || [h.street, h.housenumber, h.city, h.state, h.country].filter(Boolean).join(', ');
+        input.value = title || '';
+        hide();
+      }
+
+      // Debounced input handler + abort stale requests
+      let t=null;
+      input.addEventListener('input', ()=>{
+        const q = input.value.trim();
+        if(q===lastQuery){ return; }
+        lastQuery = q;
+        if(t) clearTimeout(t);
+        if(q.length < 2){ hide(); return; }
+        t = setTimeout(async ()=>{
+          try{
+            if(aborter) aborter.abort();
+            aborter = new AbortController();
+            const results = await geocodeSuggest(q, 6, aborter);
+            render(results);
+          }catch(e){ /* ignore aborts */ }
+        }, 250);
+      });
+
+      // Keyboard navigation (↓/↑/Enter/Esc)
+      input.addEventListener('keydown', (ev)=>{
+        const visible = !box.hidden && items.length;
+        if(!visible) return;
+        if(ev.key === 'ArrowDown'){ ev.preventDefault(); setActive(Math.min(active+1, items.length-1)); }
+        else if(ev.key === 'ArrowUp'){ ev.preventDefault(); setActive(Math.max(active-1, 0)); }
+        else if(ev.key === 'Enter'){
+          if(active >= 0){ ev.preventDefault(); pick(active); }
+          hide();
+        } else if(ev.key === 'Escape'){ hide(); }
+      });
+
+      // Mouse select
+      box.addEventListener('mousedown', (e)=>{
+        const el = e.target.closest('.ac-item');
+        if(!el) return;
+        const idx = Number(el.dataset.idx);
+        pick(idx);
+      });
+
+      // Blur/focus timing so clicks still register
+      input.addEventListener('blur', ()=>{ hideTimer = setTimeout(hide, 150); });
+      input.addEventListener('focus', ()=>{ if(hideTimer){ clearTimeout(hideTimer); hideTimer=null; } if(items.length){ show(); } });
+    }
+
+    // Enable autocomplete for both fields
+    setupAutocomplete('origin','ac-origin');
+    setupAutocomplete('destination','ac-destination');
+
+    //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    // FEATURE: Main Controller
+    // - Wire up "Generate Report": geocode, get route, draw map, compute KPIs, list steps
+    //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+    /* ---------- Main: click Generate → geocode, route, KPIs, steps ---------- */
+    $('generate').addEventListener('click', async ()=>{
+      try{
+        $('status').innerText = 'Working...';
+        $('instruction-list').innerHTML = '<tr><td colspan="3">Loading...</td></tr>';
+
+        const from = $('origin').value.trim();
+        const to = $('destination').value.trim();
+        const vehicle = $('vehicle').value;
+
+        if(!from || !to){
+          $('status').innerText = 'Please enter both Origin and Destination.';
+          return;
+        }
+
+        // Geocode inputs
+        const g1 = await geocode(from);
+        const g2 = await geocode(to);
+
+        // Update markers
+        if(startMarker) map.removeLayer(startMarker);
+        if(endMarker) map.removeLayer(endMarker);
+        startMarker = L.marker([g1.lat, g1.lng], {icon:startIcon}).addTo(map);
+        endMarker = L.marker([g2.lat, g2.lng], {icon:endIcon}).addTo(map);
+
+        // Build GraphHopper route request
+        const ghVehicle = VEHICLE_PROFILE[vehicle] || 'car';
+        const u = new URL('https://graphhopper.com/api/1/route');
+        const p = u.searchParams;
+        p.set('point', `${g1.lat},${g1.lng}`);
+        p.append('point', `${g2.lat},${g2.lng}`);
+        p.set('vehicle', ghVehicle);
+        p.set('points_encoded','false');
+        p.set('instructions','true');
+        p.set('key', DEFAULT_KEY);
+
+        // Fetch route
+        const res = await fetch(u.toString());
+        const data = await res.json();
+        if(!data.paths || !data.paths.length) throw new Error(data.message || 'No route found');
+
+        const path = data.paths[0];
+
+        // Draw polyline
+        const coords = path.points.coordinates.map(c=>[c[1],c[0]]);
+        drawRoute(coords);
+
+        // KPIs + instructions
+        const km = path.distance / 1000;
+        const durMs = path.time;
+        setKPI({ km, durMs, vehicle });
+        renderInstructions(path);
+
+        $('status').innerText = 'Route generated successfully!';
+      }catch(e){
+        $('status').innerText = 'Error: ' + (e.message || e);
+        console.error(e);
+      }
+    });
+  </script>
+</body>
+</html>
