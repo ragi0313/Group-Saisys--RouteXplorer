@@ -1,0 +1,44 @@
+[flake8]
+# Flake8 configuration for GraphHopper project
+# Enforces PEP 8 style guidelines with some adjustments
+
+# Maximum line length (allow slightly longer for type hints and URLs)
+max-line-length = 100
+
+# Error codes to ignore
+ignore =
+    E203,  # Whitespace before ':'
+    E501,  # Line too long (handled by Black)
+    W503,  # Line break before binary operator
+    W504,  # Line break after binary operator
+
+# Files to exclude from linting
+exclude =
+    .git,
+    __pycache__,
+    .venv,
+    venv,
+    env,
+    .pytest_cache,
+    .github,
+    build,
+    dist,
+    *.egg-info,
+    .tox,
+    .coverage,
+    htmlcov
+
+# Per-file ignores
+per-file-ignores =
+    __init__.py:F401,  # Unused imports in __init__
+    tests/*:F401,F811  # Unused imports/variables in tests
+
+# Complexity settings
+max-complexity = 10
+
+# Reporter style
+format = default
+
+# Additional options
+show-source = True
+statistics = True

@@ -1,0 +1,49 @@
+# Development and Testing Dependencies
+# Usage: pip install -r requirements-dev.txt
+
+# Production dependencies (includes everything from requirements.txt)
+-r requirements.txt
+
+# Testing framework
+pytest>=7.3.0
+pytest-cov>=4.0.0
+pytest-mock>=3.10.0
+pytest-timeout>=2.1.0
+
+# Code quality and linting
+black>=23.3.0
+flake8>=6.0.0
+flake8-bugbear>=23.4.0
+flake8-comprehensions>=3.12.0
+isort>=5.12.0
+
+# Type checking
+mypy>=1.2.0
+types-requests>=2.28.0
+
+# Security scanning
+bandit>=1.7.5
+safety>=2.3.5
+
+# Mocking and fixtures
+pytest-freezegun>=0.4.2
+responses>=0.23.0
+
+# Coverage reporting
+coverage>=7.2.0
+coverage[toml]>=7.2.0
+
+# Code analysis
+interrogate>=1.5.0
+
+# Pre-commit hooks
+pre-commit>=3.3.0
+
+# Documentation
+sphinx>=6.2.0
+sphinx-rtd-theme>=1.2.0
+
+# Utilities
+click>=8.1.0
+colorama>=0.4.6
+tqdm>=4.65.0
